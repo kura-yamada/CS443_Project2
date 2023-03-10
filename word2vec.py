@@ -34,6 +34,10 @@ class Skipgram:
         self.M = num_feats
         self.H = num_hidden
         self.C = num_classes
+        self.set_wts(tf.Variable(tf.random.normal(mean = 0, stddev = wt_stdev, shape = (self.M, self.H))),
+        tf.Variable(tf.random.normal(mean = 0, stddev = wt_stdev, shape = (self.H,self.C))))
+        self.set_b(tf.Variable(tf.random.normal(mean = 0, stddev=wt_stdev, shape=(self.H,))),
+                    tf.Variable(tf.random.normal(mean = 0, stddev=wt_stdev, shape=(self.C,))))
 
     def set_wts(self, y_wts, z_wts):
         '''Replaces the network weights with those passed in as parameters. Used by test code.
@@ -43,7 +47,7 @@ class Skipgram:
         y_wts: tf.Variable. shape=(M, H). New input-to-hidden layer weights.
         z_wts: tf.Variable. shape=(H, C). New hidden-to-output layer weights.
         '''
-        pass
+        self.y_wts, self.z_wts = y_wts, z_wts
 
     def set_b(self, y_b, z_b):
         '''Replaces the network biases with those passed in as parameters. Used by test code.
@@ -53,7 +57,7 @@ class Skipgram:
         y_b: tf.Variable. shape=(H,). New hidden layer bias.
         z_b: tf.Variable. shape=(C,). New output layer bias.
         '''
-        pass
+        self.y_b, self.z_b = y_b, z_b
 
     def one_hot(self, x, C):
         '''One-hot codes the vector of class labels `y`
@@ -69,7 +73,7 @@ class Skipgram:
 
         Copy-and-paste from Hebbian Learning project.
         '''
-        pass
+        return tf.cast(tf.one_hot(tf.cast(x,dtype=tf.int32), C, off_value = 0), dtype=tf.float32)
 
     def multi_hot(self, y_ind_list, num_classes):
         '''Multi-hot codes the vector of class labels `y_ind_list`
@@ -92,7 +96,12 @@ class Skipgram:
         - Because you are building a constant tensor, it might be easier to build the mini-batch of multi-hot vectors in
         numpy and then convert to a TensorFlow tensor at the end.
         '''
-        pass
+        y_multi_h = np.zeros((len(y_ind_list), num_classes))
+        for i, y  in enumerate(y_ind_list):
+            y_multi_h[i,:] = np.sum(self.one_hot(y, num_classes), axis = 0)
+        y_multi_h = np.where(y_multi_h >= 1, 1, 0)
+
+        return tf.cast(y_multi_h, dtype=tf.float32)
 
     def forward(self, x):
         '''Performs the forward pass through the decoder network with data samples `x`
@@ -109,7 +118,9 @@ class Skipgram:
         - You are returning NET_IN rather than the usual NET_ACT here because the Skip-gram loss involves the output
         layer net_in instead of the output layer net_act.
         '''
-        pass
+        y = x @ self.y_wts + self.y_b
+
+        return tf.cast(y @ self.z_wts + self.z_b, dtype = tf.float32)
 
     def loss(self, z_net_in, y_multi_h):
         '''Computes the Skip-gram loss on the current mini-batch using the multi-hot coded class labels `y_multi_h`.
@@ -137,7 +148,10 @@ class Skipgram:
         Thus, you can use y_multi_h as a "gate" or a "filter" to extract z_net_in values that are at the appropriate
         context words and at the same time nulling out the remaining z_net_in values that are not desired.
         '''
-        pass
+        right_side = tf.reduce_sum(y_multi_h * z_net_in, axis = 1)
+        left_side = tf.reduce_logsumexp(z_net_in, axis = 1) * tf.reduce_sum(y_multi_h, axis = 1)
+        return tf.reduce_sum(left_side - right_side) / float(tf.shape(y_multi_h)[0])
+
 
     def extract_at_indices(self, x, indices):
         '''Returns the samples in `x` that have indices `indices` to form a mini-batch.
@@ -156,7 +170,7 @@ class Skipgram:
 
         Copy-and-paste from Hebbian Learning project.
         '''
-        pass
+        return tf.gather(x, indices)
 
     def fit(self, x, y, mini_batch_sz=512, lr=1e-2, n_epochs=400, print_every=100, verbose=True):
         '''Trains the Skip-gram network on the training samples `x` (int-coded target words) and associated labels `y`
@@ -192,7 +206,50 @@ class Skipgram:
         wts and bias.
         - Record the average training loss values across all mini-batches.
         '''
-        pass
+        N = x.shape[0]
+        n_minibatches = N // mini_batch_sz if N % mini_batch_sz == 0 else (N // mini_batch_sz) + 1
+
+        # Define loss tracking containers
+        train_loss_hist = []
+        
+
+        #Adam Optimizer
+        opt = tf.optimizers.Adam(learning_rate=lr)
+
+        #Multi-hot coding
+        y = self.multi_hot(y, self.C)
+        #one hot coding
+        x = self.one_hot(x, self.M)
+
+  
+
+        print(f"Starting training with a max of {n_epochs}...")
+        for num_epochs in range(n_epochs):
+            #Running all the minibatches, keeping track of loss average
+            loss_avg = 0
+            for i in range(n_minibatches):
+                #Getting random sample
+                idx = tf.random.uniform(shape=[mini_batch_sz], minval=0, maxval=N, dtype=tf.int32)
+                x_mini = self.extract_at_indices(x, idx)
+                y_mini = self.extract_at_indices(y, idx)
+                #Forward and Backwards pass
+                with tf.GradientTape() as tape:
+                    net_act = self.forward(x_mini)
+                    loss = self.loss(net_act, y_mini)
+                grads = tape.gradient(loss, (self.y_wts, self.y_b, self.z_wts, self.z_b))
+                #Apply optimizer
+                opt.apply_gradients(zip(grads, (self.y_wts, self.y_b, self.z_wts, self.z_b)))
+
+                loss_avg += float(loss)
+
+            loss_avg /= n_minibatches
+            train_loss_hist.append(loss_avg)
+
+            if verbose and num_epochs % print_every == 0:
+                print(f"Completed epoch {num_epochs}; training loss: {loss_avg:.5f}")
+
+
+        return train_loss_hist
 
     def get_word_vector(self, word2ind, word):
         '''Get a single word embedding vector from a trained network
@@ -209,6 +266,12 @@ class Skipgram:
         '''
         if word not in word2ind:
             raise ValueError(f'{word} not in word dictionary!')
+        
+        input = np.array([word2ind[word]])
+        input = self.one_hot(input, self.C)
+    
+        return np.squeeze(input @ self.y_wts + self.y_b)
+        
 
     def get_all_word_vectors(self, word2ind, wordList):
         '''Get all word embedding vectors for the list of words `wordList` from the trained network
@@ -223,4 +286,14 @@ class Skipgram:
            ndarray. Word embedding vectors. shape=(len(wordList), embedding_sz)
             This is the wt vectors from the 1st net layer at the index specified by each word's int-code.
         '''
-        pass
+
+        print(type(wordList))
+        input =  []
+        for word in wordList:
+            if word not in word2ind:
+                wordList.remove(word)
+            else:
+                input.append(word2ind[word])
+        input = self.one_hot(input, self.C)
+    
+        return np.squeeze(input @ self.y_wts + self.y_b)

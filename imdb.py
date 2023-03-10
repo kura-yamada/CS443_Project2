@@ -53,7 +53,12 @@ def make_corpus(data, min_sent_size=5):
     - Tokenize the sentence into individual word strings (via tokenize_words())
     - Only add a list of words to the corpus if the length is at least `min_sent_size`.
     '''
-    pass
+    corpus = []
+    for review in data:
+        for sentence in review.split("."):
+            if len(sentence) >= min_sent_size:
+                corpus.append(tokenize_words(sentence))
+    return corpus
 
 
 def find_unique_words(corpus):
@@ -67,8 +72,12 @@ def find_unique_words(corpus):
     -----------
     unique_words: list of unique words in the corpus.
     '''
-    pass
-
+    dictionary = { }
+    for sentence in corpus:
+        for word in sentence:
+            if word not in dictionary:
+                dictionary[word] = ""
+    return list(dictionary.keys())
 
 def make_word2ind_mapping(vocab):
     '''Create dictionary that looks up a word index (int) by its string.
@@ -82,7 +91,10 @@ def make_word2ind_mapping(vocab):
     -----------
     Python dictionary with key,value pairs: string,int
     '''
-    pass
+    dict = {}
+    for i, word in enumerate(vocab):
+        dict[word] = i
+    return dict
 
 
 def make_ind2word_mapping(vocab):
@@ -97,8 +109,10 @@ def make_ind2word_mapping(vocab):
     -----------
     Python dictionary with key,value pairs: int,string
     '''
-    pass
-
+    dict = {}
+    for i, word in enumerate(vocab):
+        dict[i] = word
+    return dict
 
 def make_target_context_word_lists(corpus, word2ind, vocab_sz, context_win_sz=2):
     '''Make the target word array (training data) and context word array ("classes")
@@ -142,7 +156,29 @@ def make_target_context_word_lists(corpus, word2ind, vocab_sz, context_win_sz=2)
                                  array([0, 1, 3, 4]),
                                  array([1, 2, 4, 5]),...])
     '''
-    pass
+    N = sum(len(sentence) for sentence in corpus)
+    target_words_int = np.empty(N, dtype = int)
+    context_words_int = np.empty(N, dtype = object)
+
+    n = 0 
+    for sentence in corpus:
+        for w, word in enumerate(sentence):
+            target_words_int[n] = word2ind[word]
+            context = []
+            for k in range(w - context_win_sz, w + context_win_sz + 1):
+                if k != w:
+                    if k >= 0 and k < len(sentence):
+                        context.append(word2ind[sentence[k]])
+                    
+
+            context = np.array(context, dtype = int)
+            context_words_int[n] = context
+            n += 1
+
+    return target_words_int, context_words_int
+
+
+
 
 
 def get_imdb(path2imdb, num_reviews):
@@ -178,4 +214,14 @@ def get_imdb(path2imdb, num_reviews):
     - Make word <-> int-code lookup table(s)
     - Collect int coded target words, int-coded context words
     '''
-    pass
+    data = pd.read_csv(path2imdb, sep = "\t", dtype = str)
+    imdb_text = data.values[:,2].tolist() 
+    subset = imdb_text[0:num_reviews]
+
+    corpus = make_corpus(subset)
+    unique_words = find_unique_words(corpus)
+    word2ind = make_word2ind_mapping(unique_words)
+    target_words_int, context_words_int = make_target_context_word_lists(corpus, word2ind, len(unique_words))
+    return target_words_int, context_words_int, unique_words, word2ind 
+
+
