@@ -265,7 +265,7 @@ class Skipgram:
            This is the wt vector from the 1st net layer at the index specified by the word's int-code.
         '''
         if word not in word2ind:
-            raise ValueError(f'{word} not in word dictionary!')
+            print(f'{word} not in word dictionary!')
         
         input = np.array([word2ind[word]])
         input = self.one_hot(input, self.C)
@@ -287,11 +287,11 @@ class Skipgram:
             This is the wt vectors from the 1st net layer at the index specified by each word's int-code.
         '''
 
-        print(type(wordList))
         input =  []
         for word in wordList:
             if word not in word2ind:
                 wordList.remove(word)
+                print(f"'{word}' not in dictionary")
             else:
                 input.append(word2ind[word])
         input = self.one_hot(input, self.C)

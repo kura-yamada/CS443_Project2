@@ -56,7 +56,8 @@ def make_corpus(data, min_sent_size=5):
     corpus = []
     for review in data:
         for sentence in review.split("."):
-            if len(sentence) >= min_sent_size:
+            tokens = tokenize_words(sentence)
+            if len(tokens) >= min_sent_size:
                 corpus.append(tokenize_words(sentence))
     return corpus
 
