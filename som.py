@@ -86,12 +86,16 @@ class SOM:
         ----------
         ndarray. shape=(N, num_feats). The most similar weight vector for each data sample vector.
         '''
-        N = data.shape[0]
+        N, M =  data.shape
         dists = np.linalg.norm(self.wts[None, :, :, :] - data[:, None, None, :], axis=3)
         idx = np.argmin(dists.reshape((N, self.n_rows * self.n_cols)), axis=1)
-        wts = self.wts.reshape(None, self.n_rows * self.n_cols)[np.arange(N), idx]
-        print(wts.shape)
-        #Stopping here. Need to get all the weights using the index found above. idx is right, I tested it
+
+        wts = np.zeros((N, M))
+        iterate = np.arange(N)
+        wts[iterate, :] = self.wts.reshape(self.n_rows * self.n_cols, M)[idx[iterate], : ]
+
+        return wts
+        
 
     def gaussian(self, bmu_rc, sigma):
         '''Generates a "normalized" 2D Gaussian, where the max value is 1, and is centered on `bmu_rc`.
@@ -121,7 +125,10 @@ class SOM:
 
         NOTE: For efficiency, you should not use any for loops.
         '''
-        pass
+        cols, rows = np.meshgrid(np.linspace(0, self.n_cols - 1, self.n_cols), np.linspace(0, self.n_rows -1, self.n_rows))
+        dists = np.sqrt((rows - bmu_rc[0]) ** 2 + (cols - bmu_rc[1])**2)
+        gauss = np.exp(- (dists)**2 / (2 * sigma**2))
+        return gauss
 
     def update_wts(self, input_vector, bmu_rc, lr, sigma):
         '''Applies the SOM update rule to change the BMU (and neighboring units') weights,
@@ -137,7 +144,8 @@ class SOM:
 
         NOTE: For efficiency, you should not use any for loops.
         '''
-        pass
+        gauss = self.gaussian(bmu_rc, sigma)
+        self.wts += lr * gauss[:, :, None] * (input_vector[None, None, :] - self.wts)
 
     def decay_param(self, hyperparam, rate):
         '''Takes a hyperparameter (e.g. lr, sigma) and applies a time-dependent decay function.
@@ -151,7 +159,7 @@ class SOM:
         ----------
         float. The decayed parameter.
         '''
-        pass
+        return rate * hyperparam
 
     def fit(self, x, n_epochs, lr=0.2, lr_decay=0.9, sigma=10, sigma_decay=0.9, print_every=1, verbose=True):
         '''Train the SOM on data
@@ -183,7 +191,35 @@ class SOM:
         - Within each epoch: compute the BMU of each data sample, update its weights and those of its neighbors, and
         decay the learning rate and Gaussian neighborhood sigma.
         '''
-        pass
+        N, M = x.shape
+
+        print(f"Beginning Training with {n_epochs} epochs")
+        for epoch in range(n_epochs):
+            shuffled_idx = np.random.choice(np.arange(N), N, replace=False)
+            for n in range(N):
+                #Sampling without replacement
+                datum = x[shuffled_idx[n],:]
+                bmu_rc = self.get_bmu(datum)
+                self.update_wts(datum, bmu_rc, lr, sigma)
+                lr = self.decay_param(lr, lr_decay)
+                sigma = self.decay_param(sigma, sigma_decay)
+
+            if verbose and (epoch % print_every) == 0:
+                print(f'Epoch {epoch}:')
+                print(f"---Sigma: {sigma:.3f}")
+                print(f"---Learing Rate: {lr:.3f}")
+                print(f"---Error: {self.error(x):.3f}")
+
+            lr = self.decay_param(lr, lr_decay)
+            sigma = self.decay_param(sigma, sigma_decay)
+
+            
+            
+        
+        print("Training complete")
+
+
+
 
     def error(self, data):
         '''Computes the quantization error: average error incurred by approximating all data vectors
@@ -201,7 +237,17 @@ class SOM:
         - Progressively average the Euclidean distance between each data vector
         and the BMU weight vector.
         '''
-        pass
+        return np.mean(np.linalg.norm(self.get_nearest_wts(data) - data))
+
+    def neighbors(self, matrix, x, y):
+        num_rows, num_cols = len(matrix), len(matrix[0])
+        result = []
+    
+        for i in range( (0 if x-1 < 0 else x-1), (num_rows if x+2 > num_rows else x+2), 1  ):
+            for j in range( (0 if y-1 < 0 else y-1), (num_cols if y+2 > num_cols else y+2), 1 ):
+                if x != i and y != j:
+                    result.append(matrix[i][j])
+        return result
 
     def u_matrix(self):
         '''Compute U-matrix, the distance each SOM unit wt and that of its 8 local neighbors.
@@ -214,4 +260,15 @@ class SOM:
         NOTE: Remember to normalize the U-matrix so that its range of values always span [0, 1].
 
         '''
-        pass
+        results = np.zeros((self.n_rows, self.n_cols))
+        for i in range(self.n_rows):
+            for j in range(self.n_cols):
+                sum = 0
+                neighbors = self.neighbors(self.wts, i, j)
+                for n in range(len(neighbors)):
+                    dist = np.linalg.norm(self.wts[i,j] - neighbors[n])
+                    sum += dist
+                results[i, j] = 1/len(neighbors) * sum        
+
+        return results
+
